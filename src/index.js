@@ -36,11 +36,28 @@ async function main() {
     const data = await readSheet(sheetId, range);
     const processedData = extractColumns(data, columnsNames);
     // Console for loop that confirms the information is correct
-    /*for (let i = 0; i < 10; i++) {
-      console.log("Sheet Data:", processedData[i], "\n");
-    }*/
+    // console.log("Sheet Data:");
+    // for (let i = 0; i < 10; i++) {
+    //   console.log(processedData[i], "\n");
+    // }
+
+    // Normalize Acquired By columns into an array, removing the newlines that seperate each entry
+    const normalizedData = processedData.map((entry) => ({
+      ...entry,
+      "Acquired By": entry["Acquired By"]
+        .split("\n")
+        .map((name) => name.trim())
+        .filter(Boolean),
+    }));
+
+    // Console for loop that confirms the information is correct
+    console.log("Normalized Data:");
+    for (let i = 0; i < 10; i++) {
+      console.log(normalizedData[i], "\n");
+    }
   } catch (err) {
     console.error("Error reading sheet:", err);
+    return;
   }
 }
 
