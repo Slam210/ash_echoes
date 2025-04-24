@@ -51,10 +51,13 @@ async function main() {
     }));
 
     // Console for loop that confirms the information is correct
-    console.log("Normalized Data:");
-    for (let i = 0; i < 10; i++) {
-      console.log(normalizedData[i], "\n");
-    }
+    // console.log("Normalized Data:");
+    // for (let i = 0; i < 10; i++) {
+    //   console.log(normalizedData[i], "\n");
+    // }
+
+    // Filter out level 3 inheritances
+    const filteredData = normalizedData.filter((entry) => entry.Level !== "3");
   } catch (err) {
     console.error("Error reading sheet:", err);
     return;
