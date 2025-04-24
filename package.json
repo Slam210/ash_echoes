@@ -6,7 +6,8 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
-  "author": "",
+  "author": "Steven Lam",
+  "type": "module",
   "license": "ISC",
   "description": "",
   "dependencies": {
