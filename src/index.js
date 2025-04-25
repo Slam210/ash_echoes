@@ -58,6 +58,24 @@ async function main() {
 
     // Filter out level 3 inheritances
     const filteredData = normalizedData.filter((entry) => entry.Level !== "3");
+
+    const reverseMap = {};
+
+    filteredData.forEach((entry) => {
+      const inheritance = entry["Inheritance Name"];
+      const level = entry.Level;
+      const sources = entry["Acquired By"];
+
+      sources.forEach((source) => {
+        if (!reverseMap[source]) {
+          reverseMap[source] = [];
+        }
+        reverseMap[source].push({ name: inheritance, level });
+      });
+    });
+
+    // Console for loop that confirms the information is correct
+    console.log("Reversed Map Data: ", reverseMap);
   } catch (err) {
     console.error("Error reading sheet:", err);
     return;
