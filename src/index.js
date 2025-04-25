@@ -81,23 +81,49 @@ function greedyPick(reverseMap, maxSources) {
   const picked = new Set();
   const inheritanceCount = new Map();
 
+  // Sort the reverseMap so that gold rarity is processed first
+  const sortedReverseMap = Object.entries(reverseMap).sort(
+    ([sourceA, inheritancesA], [sourceB, inheritancesB]) => {
+      // Prioritize "gold" rarity over "white"
+      const goldCountA = inheritancesA.filter(
+        (item) => item.rarity === "gold"
+      ).length;
+      const goldCountB = inheritancesB.filter(
+        (item) => item.rarity === "gold"
+      ).length;
+
+      return goldCountB - goldCountA; // Sort so that golds come first
+    }
+  );
+
   while (picked.size < maxSources) {
     let bestSource = null;
     let bestGain = -1;
     let tempAdds = [];
 
-    for (const [source, inheritances] of Object.entries(reverseMap)) {
+    for (const [source, inheritances] of sortedReverseMap) {
       if (picked.has(source)) continue;
 
       let gain = 0;
       const adds = [];
 
-      for (const { name, level } of inheritances) {
+      for (const { name, level, rarity } of inheritances) {
         const score = levelScore[level] || 0;
 
-        // Bonus: we still get value from duplicates!
-        gain += score;
-        adds.push({ name, level });
+        // Only add points for duplicates (count >= 2)
+        if (
+          rarity === "gold" &&
+          inheritances.filter((item) => item.rarity === "gold").length >= 2
+        ) {
+          gain += 100;
+        } else if (
+          rarity === "white" &&
+          inheritances.filter((item) => item.rarity === "white").length >= 2
+        ) {
+          gain += 10;
+        }
+
+        adds.push({ name, level, rarity });
       }
 
       if (gain > bestGain) {
@@ -111,10 +137,10 @@ function greedyPick(reverseMap, maxSources) {
 
     picked.add(bestSource);
 
-    // Update inheritance counts
-    for (const { name, level } of tempAdds) {
+    // Update inheritance counts, including rarity and applying counts
+    for (const { name, level, rarity } of tempAdds) {
       if (!inheritanceCount.has(name)) {
-        inheritanceCount.set(name, { level, count: 1 });
+        inheritanceCount.set(name, { level, count: 1, rarity });
       } else {
         const existing = inheritanceCount.get(name);
         existing.count += 1;
@@ -122,19 +148,30 @@ function greedyPick(reverseMap, maxSources) {
     }
   }
 
-  // Final score includes overlaps
+  // Final score includes overlaps and rarity
   let totalScore = 0;
   const details = [];
 
-  for (const [name, { level, count }] of inheritanceCount.entries()) {
-    const score = (levelScore[level] || 0) * count;
+  // Assign scores based on count and rarity
+  for (const [name, { level, count, rarity }] of inheritanceCount.entries()) {
+    let score = 0;
+
+    if (count >= 2) {
+      if (rarity === "gold") {
+        score = 100; // 2 gold dupes give 100 points
+      } else if (rarity === "white") {
+        score = 10; // 2 white dupes give 10 points
+      }
+    }
+
     totalScore += score;
-    details.push({ name, level, count, score });
+    details.push({ name, level, count, rarity, score }); // Include rarity and score
   }
 
+  // Filter and sort by score
   const targets = details
-    .filter((item) => item.count >= 2)
-    .sort((a, b) => b.score - a.score);
+    .filter((item) => item.count >= 2) // Only include items with count >= 2
+    .sort((a, b) => b.score - a.score); // Sort by score in descending order
 
   return {
     sources: [...picked],
@@ -147,7 +184,7 @@ function greedyPick(reverseMap, maxSources) {
 
 // Main function that runs the program
 async function main() {
-  const columnsNames = ["Inheritance Name", "Level", "Acquired By"];
+  const columnsNames = ["Inheritance Name", "Level", "Acquired By", "Rarity"];
   try {
     const data = await readSheet(sheetId, range);
     const processedData = extractColumns(data, columnsNames);
@@ -181,12 +218,13 @@ async function main() {
       const inheritance = entry["Inheritance Name"];
       const level = entry.Level;
       const sources = entry["Acquired By"];
+      const rarity = entry["Rarity"];
 
       sources.forEach((source) => {
         if (!reverseMap[source]) {
           reverseMap[source] = [];
         }
-        reverseMap[source].push({ name: inheritance, level });
+        reverseMap[source].push({ name: inheritance, level, rarity });
       });
     });
 

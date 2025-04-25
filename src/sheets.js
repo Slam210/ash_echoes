@@ -29,5 +29,35 @@ export async function readSheet(spreadsheetId, range) {
     range,
   });
 
-  return res.data.values;
+  // Retrieving grid data (including background color)
+  const formattingRes = await sheets.spreadsheets.get({
+    spreadsheetId,
+    ranges: [range],
+    fields: "sheets.data.rowData.values.userEnteredFormat.backgroundColor",
+  });
+
+  const rows = res.data.values;
+  const gridData = formattingRes.data.sheets[0].data[0].rowData;
+
+  // Map to get the background color of column A (the first column)
+  const backgroundColors = gridData.map((row) => {
+    return row.values && row.values[0]?.userEnteredFormat?.backgroundColor;
+  });
+
+  // Add rarity based on the background color of column A
+  const processedData = rows.map((row, index) => {
+    const rarity =
+      index === 0
+        ? "Rarity"
+        : backgroundColors[index] &&
+          (backgroundColors[index].red !== 1 ||
+            backgroundColors[index].green !== 1 ||
+            backgroundColors[index].blue !== 1)
+        ? "gold"
+        : "white";
+
+    return [...row, rarity]; // Add the rarity column at the end
+  });
+
+  return processedData;
 }
