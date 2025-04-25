@@ -1,11 +1,17 @@
 // Imports
 import dotenv from "dotenv";
 import { readSheet } from "./sheets.js";
+import attackList from "./Definitions/attack.js";
+import defenseList from "./Definitions/defense.js";
+import mstList from "./Definitions/mst.js";
+import trmList from "./Definitions/trm.js";
+import vitList from "./Definitions/vit.js";
+import charactersList from "./Definitions/characters.js";
 
 // Configurations
 dotenv.config();
 const sheetId = process.env.GOOGLE_SHEET_ID;
-const range = "Inheritance !A1:H150";
+const range = "Inheritance Skills!A1:H150";
 const levelScore = { 0: 3, 1: 2, 2: 1 };
 
 /*
@@ -188,13 +194,13 @@ async function main() {
   try {
     const data = await readSheet(sheetId, range);
     const processedData = extractColumns(data, columnsNames);
-    // Console for loop that confirms the information is correct
-    // console.log("Sheet Data:");
-    // for (let i = 0; i < 10; i++) {
-    //   console.log(processedData[i], "\n");
-    // }
+    // // Console for loop that confirms the information is correct
+    // // console.log("Sheet Data:");
+    // // for (let i = 0; i < 10; i++) {
+    // //   console.log(processedData[i], "\n");
+    // // }
 
-    // Normalize Acquired By columns into an array, removing the newlines that seperate each entry
+    // // Normalize Acquired By columns into an array, removing the newlines that seperate each entry
     const normalizedData = processedData.map((entry) => ({
       ...entry,
       "Acquired By": entry["Acquired By"]
@@ -203,13 +209,13 @@ async function main() {
         .filter(Boolean),
     }));
 
-    // Console for loop that confirms the information is correct
-    // console.log("Normalized Data:");
-    // for (let i = 0; i < 10; i++) {
-    //   console.log(normalizedData[i], "\n");
-    // }
+    // // Console for loop that confirms the information is correct
+    // // console.log("Normalized Data:");
+    // // for (let i = 0; i < 10; i++) {
+    // //   console.log(normalizedData[i], "\n");
+    // // }
 
-    // Filter out level 3 inheritances
+    // // Filter out level 3 inheritances
     const filteredData = normalizedData.filter((entry) => entry.Level !== "3");
 
     const reverseMap = {};
@@ -222,18 +228,39 @@ async function main() {
 
       sources.forEach((source) => {
         if (!reverseMap[source]) {
+          let type = null;
+          if (attackList.includes(source)) type = "ATK";
+          else if (defenseList.includes(source)) type = "DEF";
+          else if (vitList.includes(source)) type = "VIT";
+          else if (mstList.includes(source)) type = "MST";
+          else if (trmList.includes(source)) type = "TRM";
+          else if (charactersList.includes(source)) type = "CHAR";
           reverseMap[source] = [];
+          reverseMap[source].type = type;
         }
+
         reverseMap[source].push({ name: inheritance, level, rarity });
       });
     });
 
-    // Console for loop that confirms the information is correct
+    // // Console for loop that confirms the information is correct
     // console.log("Reversed Map Data: ", reverseMap);
+
+    // console.log("Sources with missing type:");
+    // for (const source in reverseMap) {
+    //   if (!reverseMap[source].type) {
+    //     console.log(source);
+    //   }
+    // }
 
     const result = greedyPick(reverseMap, 6);
 
-    console.log("Sources Selected:", result.sources);
+    console.log(
+      "Sources Selected:",
+      result.sources.map(
+        (source) => `(${reverseMap[source].type || "?"}) ${source}`
+      )
+    );
     console.log("Unique Inheritances:", result.totalInheritances);
     console.log("Total Score (with overlaps):", result.totalScore);
     console.table(result.targets);
