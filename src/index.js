@@ -5,7 +5,7 @@ import { readSheet } from "./sheets.js";
 // Configurations
 dotenv.config();
 const sheetId = process.env.GOOGLE_SHEET_ID;
-const range = "Sheet1!A1:H150";
+const range = "Inheritance !A1:H150";
 const levelScore = { 0: 3, 1: 2, 2: 1 };
 
 /*
