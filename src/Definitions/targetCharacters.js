@@ -1,4 +1,4 @@
-const targetCharacters = [
+const targetCharactersList = [
   "Aceo",
   "Begonia",
   "Belia",
@@ -39,4 +39,4 @@ const targetCharacters = [
   "Zodivin Azure",
 ];
 
-export default targetCharacters;
+export default targetCharactersList;

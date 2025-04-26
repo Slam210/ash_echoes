@@ -8,7 +8,7 @@ import trmList from "./Definitions/trm.js";
 import vitList from "./Definitions/vit.js";
 import charactersList from "./Definitions/characters.js";
 import ownedcharactersList from "./Definitions/ownedcharacters.js";
-import targetCharacters from "./Definitions/targetCharacters.js";
+import targetCharactersList from "./Definitions/targetCharacters.js";
 
 // Configurations
 dotenv.config();
@@ -86,13 +86,15 @@ function extractColumns(rows, columnsNames) {
 // }
 
 function greedyPick(reverseMap, maxSources) {
-  const characters = Object.entries(reverseMap).filter(
-    ([source]) =>
-      reverseMap[source].type === "CHAR" &&
-      ownedcharactersList.includes(source) &&
-      targetCharacters.includes(source) &&
-      charactersList.includes(source)
-  );
+  const characters = Object.entries(reverseMap).filter(([source]) => {
+    const isChar = reverseMap[source].type === "CHAR";
+    const isOwned = ownedcharactersList.includes(source);
+    const isTargetOk =
+      targetCharactersList.length === 0 ||
+      targetCharactersList.includes(source);
+    const isValidChar = charactersList.includes(source);
+    return isChar && isOwned && isTargetOk && isValidChar;
+  });
 
   const nonCharacters = Object.entries(reverseMap).filter(
     ([source]) => reverseMap[source].type !== "CHAR"
