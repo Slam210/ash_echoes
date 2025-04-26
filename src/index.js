@@ -7,6 +7,8 @@ import mstList from "./Definitions/mst.js";
 import trmList from "./Definitions/trm.js";
 import vitList from "./Definitions/vit.js";
 import charactersList from "./Definitions/characters.js";
+import ownedcharactersList from "./Definitions/ownedcharacters.js";
+import targetCharacters from "./Definitions/targetCharacters.js";
 
 // Configurations
 dotenv.config();
@@ -84,108 +86,91 @@ function extractColumns(rows, columnsNames) {
 // }
 
 function greedyPick(reverseMap, maxSources) {
-  const picked = new Set();
-  const inheritanceCount = new Map();
-
-  // Sort the reverseMap so that gold rarity is processed first
-  const sortedReverseMap = Object.entries(reverseMap).sort(
-    ([sourceA, inheritancesA], [sourceB, inheritancesB]) => {
-      // Prioritize "gold" rarity over "white"
-      const goldCountA = inheritancesA.filter(
-        (item) => item.rarity === "gold"
-      ).length;
-      const goldCountB = inheritancesB.filter(
-        (item) => item.rarity === "gold"
-      ).length;
-
-      return goldCountB - goldCountA; // Sort so that golds come first
-    }
+  const characters = Object.entries(reverseMap).filter(
+    ([source]) =>
+      reverseMap[source].type === "CHAR" &&
+      ownedcharactersList.includes(source) &&
+      targetCharacters.includes(source) &&
+      charactersList.includes(source)
   );
 
-  while (picked.size < maxSources) {
-    let bestSource = null;
-    let bestGain = -1;
-    let tempAdds = [];
+  const nonCharacters = Object.entries(reverseMap).filter(
+    ([source]) => reverseMap[source].type !== "CHAR"
+  );
 
-    for (const [source, inheritances] of sortedReverseMap) {
+  let bestResult = null;
+
+  for (const [charSource] of characters) {
+    const picked = new Set([charSource]);
+    const inheritanceCount = new Map();
+    const typeCount = { [reverseMap[charSource].type]: 1 };
+
+    const sortedSources = nonCharacters.sort(([, aInherits], [, bInherits]) => {
+      const goldA = aInherits.filter((i) => i.rarity === "gold").length;
+      const goldB = bInherits.filter((i) => i.rarity === "gold").length;
+      return goldB - goldA;
+    });
+
+    for (const [source, inheritances] of sortedSources) {
+      if (picked.size >= maxSources + 1) break;
       if (picked.has(source)) continue;
 
-      let gain = 0;
-      const adds = [];
+      picked.add(source);
+      const type = reverseMap[source].type;
+      typeCount[type] = (typeCount[type] || 0) + 1;
 
       for (const { name, level, rarity } of inheritances) {
-        const score = levelScore[level] || 0;
-
-        // Only add points for duplicates (count >= 2)
-        if (
-          rarity === "gold" &&
-          inheritances.filter((item) => item.rarity === "gold").length >= 2
-        ) {
-          gain += 100;
-        } else if (
-          rarity === "white" &&
-          inheritances.filter((item) => item.rarity === "white").length >= 2
-        ) {
-          gain += 10;
+        if (!inheritanceCount.has(name)) {
+          inheritanceCount.set(name, { level, count: 1, rarity });
+        } else {
+          inheritanceCount.get(name).count += 1;
         }
-
-        adds.push({ name, level, rarity });
-      }
-
-      if (gain > bestGain) {
-        bestSource = source;
-        bestGain = gain;
-        tempAdds = adds;
       }
     }
 
-    if (!bestSource) break;
+    // Ensure at least 2 types have 2+ sources
+    const validTypeSpread =
+      Object.values(typeCount).filter((c) => c >= 2).length >= 2;
 
-    picked.add(bestSource);
+    if (!validTypeSpread) continue;
 
-    // Update inheritance counts, including rarity and applying counts
-    for (const { name, level, rarity } of tempAdds) {
-      if (!inheritanceCount.has(name)) {
-        inheritanceCount.set(name, { level, count: 1, rarity });
-      } else {
-        const existing = inheritanceCount.get(name);
-        existing.count += 1;
+    // Scoring
+    let totalScore = 0;
+    const details = [];
+
+    for (const [name, { level, count, rarity }] of inheritanceCount.entries()) {
+      let score = 0;
+      if (count >= 2) {
+        score = rarity === "gold" ? 50 : rarity === "white" ? 10 : 0;
       }
+      totalScore += score;
+      details.push({ name, level, count, rarity, score });
+    }
+
+    const targets = details
+      .filter((d) => d.count >= 2)
+      .sort((a, b) => b.score - a.score);
+
+    if (!bestResult || totalScore > bestResult.totalScore) {
+      bestResult = {
+        sources: [charSource, ...[...picked].filter((s) => s !== charSource)],
+        totalInheritances: inheritanceCount.size,
+        totalScore,
+        details,
+        targets,
+      };
     }
   }
 
-  // Final score includes overlaps and rarity
-  let totalScore = 0;
-  const details = [];
-
-  // Assign scores based on count and rarity
-  for (const [name, { level, count, rarity }] of inheritanceCount.entries()) {
-    let score = 0;
-
-    if (count >= 2) {
-      if (rarity === "gold") {
-        score = 100; // 2 gold dupes give 100 points
-      } else if (rarity === "white") {
-        score = 10; // 2 white dupes give 10 points
-      }
+  return (
+    bestResult || {
+      sources: [],
+      totalInheritances: 0,
+      totalScore: 0,
+      details: [],
+      targets: [],
     }
-
-    totalScore += score;
-    details.push({ name, level, count, rarity, score }); // Include rarity and score
-  }
-
-  // Filter and sort by score
-  const targets = details
-    .filter((item) => item.count >= 2) // Only include items with count >= 2
-    .sort((a, b) => b.score - a.score); // Sort by score in descending order
-
-  return {
-    sources: [...picked],
-    totalInheritances: inheritanceCount.size,
-    totalScore,
-    details,
-    targets,
-  };
+  );
 }
 
 // Main function that runs the program
