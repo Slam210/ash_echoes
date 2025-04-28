@@ -9,12 +9,16 @@ import vitList from "./Definitions/vit.js";
 import charactersList from "./Definitions/characters.js";
 import ownedcharactersList from "./Definitions/ownedcharacters.js";
 import targetCharactersList from "./Definitions/targetCharacters.js";
+import ownedtracesList from "./Definitions/ownedtraces.js";
 
 // Configurations
 dotenv.config();
 const sheetId = process.env.GOOGLE_SHEET_ID;
 const range = "Inheritance Skills!A1:H150";
-const levelScore = { 0: 3, 1: 2, 2: 1 };
+const config = {
+  targetCharacter: null,
+  initialSources: null,
+};
 
 /*
 Function that is utilized to extract columns
@@ -85,94 +89,172 @@ function extractColumns(rows, columnsNames) {
 //   };
 // }
 
-function greedyPick(reverseMap, maxSources) {
-  const characters = Object.entries(reverseMap).filter(([source]) => {
-    const isChar = reverseMap[source].type === "CHAR";
-    const isOwned = ownedcharactersList.includes(source);
-    const isTargetOk =
-      targetCharactersList.length === 0 ||
-      targetCharactersList.includes(source);
-    const isValidChar = charactersList.includes(source);
-    return isChar && isOwned && isTargetOk && isValidChar;
-  });
-
-  const nonCharacters = Object.entries(reverseMap).filter(
-    ([source]) => reverseMap[source].type !== "CHAR"
-  );
-
-  let bestResult = null;
-
-  for (const [charSource] of characters) {
-    const picked = new Set([charSource]);
-    const inheritanceCount = new Map();
-    const typeCount = { [reverseMap[charSource].type]: 1 };
-
-    const sortedSources = nonCharacters.sort(([, aInherits], [, bInherits]) => {
-      const goldA = aInherits.filter((i) => i.rarity === "gold").length;
-      const goldB = bInherits.filter((i) => i.rarity === "gold").length;
-      return goldB - goldA;
-    });
-
-    for (const [source, inheritances] of sortedSources) {
-      if (picked.size >= maxSources + 1) break;
-      if (picked.has(source)) continue;
-
-      picked.add(source);
-      const type = reverseMap[source].type;
-      typeCount[type] = (typeCount[type] || 0) + 1;
-
-      for (const { name, level, rarity } of inheritances) {
-        if (!inheritanceCount.has(name)) {
-          inheritanceCount.set(name, { level, count: 1, rarity });
-        } else {
-          inheritanceCount.get(name).count += 1;
-        }
-      }
-    }
-
-    // Ensure at least 2 types have 2+ sources
-    const validTypeSpread =
-      Object.values(typeCount).filter((c) => c >= 2).length >= 2;
-
-    if (!validTypeSpread) continue;
-
-    // Scoring
-    let totalScore = 0;
-    const details = [];
-
-    for (const [name, { level, count, rarity }] of inheritanceCount.entries()) {
-      let score = 0;
-      if (count >= 2) {
-        score = rarity === "gold" ? 50 : rarity === "white" ? 10 : 0;
-      }
-      totalScore += score;
-      details.push({ name, level, count, rarity, score });
-    }
-
-    const targets = details
-      .filter((d) => d.count >= 2)
-      .sort((a, b) => b.score - a.score);
-
-    if (!bestResult || totalScore > bestResult.totalScore) {
-      bestResult = {
-        sources: [charSource, ...[...picked].filter((s) => s !== charSource)],
-        totalInheritances: inheritanceCount.size,
-        totalScore,
-        details,
-        targets,
+function greedyPickAllCombinations(
+  reverseMap,
+  maxSources,
+  targetCharacter,
+  preselect,
+  ownedtracesList,
+) {
+  if (!targetCharacter) {
+    const validTargets = targetCharactersList.filter((char) =>
+      ownedcharactersList.includes(char),
+    );
+    if (validTargets.length > 0) {
+      targetCharacter =
+        validTargets[Math.floor(Math.random() * validTargets.length)];
+    } else {
+      console.warn("No valid target characters available.");
+      return {
+        character: null,
+        sources: [],
+        totalInheritances: 0,
+        totalScore: 0,
+        details: [],
+        targets: [],
       };
     }
   }
 
-  return (
-    bestResult || {
-      sources: [],
-      totalInheritances: 0,
-      totalScore: 0,
-      details: [],
-      targets: [],
-    }
+  // Add the character type (e.g., "CHAR") to the reverse map for selection
+  if (!reverseMap[targetCharacter]) {
+    reverseMap[targetCharacter] = { type: "CHAR", inheritances: [] };
+  }
+
+  const nonCharacters = Object.entries(reverseMap).filter(
+    ([source]) => reverseMap[source].type !== "CHAR",
   );
+
+  const allSources = Array.from(
+    new Set([...nonCharacters.map(([source]) => source), ...(preselect || [])]),
+  );
+
+  // Add the character to the selected set, but it won't be a part of the "allSources" for source selection
+  const selected = new Set([targetCharacter]);
+
+  // Remove the character from the available sources for inheritance selection
+  const sourcesWithoutChar = allSources.filter(
+    (source) => source !== targetCharacter,
+  );
+
+  // Separate sources into owned and non-owned
+  const ownedSources = sourcesWithoutChar.filter((source) =>
+    ownedtracesList.includes(source),
+  );
+  const remainingSources = sourcesWithoutChar.filter(
+    (source) => !ownedtracesList.includes(source),
+  );
+
+  // We will now proceed to select sources one by one, making decisions at each step
+  while (selected.size < maxSources) {
+    const candidates = [];
+
+    // First, we simulate the "decision tree" at each slot
+    const allCandidates = [];
+
+    // Draw from ownedSources or remainingSources based on potential gain at each slot
+    for (const source of [...ownedSources, ...remainingSources]) {
+      if (selected.has(source)) continue;
+
+      let gain = 0;
+      const tempTypeCount = {};
+      const tempInheritanceCount = new Map();
+
+      const inheritances = reverseMap[source];
+      if (Array.isArray(inheritances)) {
+        const seenInheritances = new Set();
+
+        inheritances.forEach(({ name, level, rarity }) => {
+          if (seenInheritances.has(name)) return;
+          seenInheritances.add(name);
+
+          tempInheritanceCount.set(name, {
+            level: parseInt(level, 10) || 0,
+            count: 1,
+            rarity,
+          });
+        });
+      }
+
+      // Simple gain: count of unique inheritances + bonus for types
+      gain += tempInheritanceCount.size * 5;
+
+      // We simulate the effect of drawing this source
+      allCandidates.push({ source, gain });
+    }
+
+    // Now we need to sort by the potential gain at this step and pick the best option
+    if (allCandidates.length === 0) break;
+
+    // Sort candidates by gain (highest first)
+    allCandidates.sort((a, b) => b.gain - a.gain);
+
+    // Select the top candidate with the highest gain
+    const bestCandidate = allCandidates[0]; // The one with the highest gain
+    selected.add(bestCandidate.source);
+  }
+
+  // FINAL recomputation of inheritanceCount and typeCount
+  const inheritanceCount = new Map();
+  const typeCount = {};
+
+  for (const source of selected) {
+    const type = reverseMap[source]?.type;
+    if (type) typeCount[type] = (typeCount[type] || 0) + 1;
+
+    const inheritances = reverseMap[source];
+    if (Array.isArray(inheritances)) {
+      const seenInheritances = new Set();
+
+      inheritances.forEach(({ name, level, rarity }) => {
+        if (seenInheritances.has(name)) return;
+        seenInheritances.add(name);
+
+        if (!inheritanceCount.has(name)) {
+          inheritanceCount.set(name, {
+            level: parseInt(level, 10) || 0,
+            count: 1,
+            rarity,
+          });
+        } else {
+          const entry = inheritanceCount.get(name);
+          entry.count += 1;
+          const newLevel = parseInt(level, 10) || 0;
+          if (newLevel > entry.level) {
+            entry.level = newLevel;
+          }
+        }
+      });
+    }
+  }
+
+  // Now calculate total score
+  let totalScore = 0;
+  const details = [];
+
+  inheritanceCount.forEach(({ level, count, rarity }, name) => {
+    let score = 0;
+    if (count >= 2) {
+      score = rarity === "gold" ? 50 : rarity === "white" ? 10 : 0;
+    }
+    totalScore += score;
+    details.push({ name, level, count, rarity, score });
+  });
+
+  const targets = details
+    .filter((d) => d.count >= 2)
+    .sort((a, b) => b.score - a.score);
+
+  const sortedDetails = details.sort((a, b) => b.score - a.score);
+
+  return {
+    character: targetCharacter, // Character is still part of the final result
+    sources: [...selected].filter((source) => source !== targetCharacter), // Remove character from sources list
+    totalInheritances: inheritanceCount.size,
+    totalScore,
+    sortedDetails,
+    targets,
+  };
 }
 
 // Main function that runs the program
@@ -240,17 +322,27 @@ async function main() {
     //   }
     // }
 
-    const result = greedyPick(reverseMap, 6);
+    const result = greedyPickAllCombinations(
+      reverseMap,
+      7,
+      config.targetCharacter,
+      config.initialSources,
+      ownedtracesList,
+    );
 
+    console.log("Character Selected: ", result.character);
     console.log(
       "Sources Selected:",
-      result.sources.map(
-        (source) => `(${reverseMap[source].type || "?"}) ${source}`
-      )
+      result.sources.map((source) => {
+        const entry = reverseMap[source];
+        const type = entry?.type || "?";
+        return `(${type}) ${source}`;
+      }),
     );
+
     console.log("Unique Inheritances:", result.totalInheritances);
     console.log("Total Score (with overlaps):", result.totalScore);
-    console.table(result.targets);
+    console.table(result.sortedDetails);
   } catch (err) {
     console.error("Error reading sheet:", err);
     return;
